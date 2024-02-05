@@ -1,0 +1,13 @@
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_psk
+  manual_ip:
+    static_ip: ${networkdeviceip}
+    gateway: ${networkgateway}
+    subnet: ${networknetmask}
+
+  ap:
+    ssid: ${deviceapssid}
+    password: !secret ap_password
+
+captive_portal:

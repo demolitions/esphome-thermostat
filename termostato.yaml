@@ -1,0 +1,7 @@
+substitutions:
+  devicename: YOUR_DEVICE_NAME
+  networkdeviceip: YOUR_DEVICE_IP
+  deviceapssid: YOUR_DEVICE_FALLBACK_AP_SSID
+  timezone: Europe/Rome
+
+<<: !include projects/termostato/termostato.yaml

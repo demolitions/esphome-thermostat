@@ -1,0 +1,324 @@
+packages:
+  device: !include ../esp32_nodemcu.yaml
+  base: !include ../base.yaml
+  wifi: !include ../wifi.yaml
+  webserver: !include ../webserver.yaml
+
+esphome:
+  includes:
+    - projects/termostato/globals.h
+    - projects/termostato/libs/esphome_wrappers.h
+    - projects/termostato/libs/AonLinkedList.h
+    - projects/termostato/libs/musical_notes.h
+    - projects/termostato/src/buttons.h
+    - projects/termostato/src/schedule.h
+    - projects/termostato/libs/SD/sd_defines.h
+    - projects/termostato/libs/SD/sd_diskio.h
+    - projects/termostato/libs/SD/sd_diskio.cpp
+    - projects/termostato/libs/SD/sd_diskio_crc.c
+    - projects/termostato/libs/SD/SD.h
+    - projects/termostato/libs/SD/SD.cpp
+    - projects/termostato/src/storage.h
+    - projects/termostato/src/termostato_logic.h
+    - projects/termostato/src/buttons_gfx.h
+    - projects/termostato/src/touch.h
+    - projects/termostato/src/termostato_gfx.h
+    - projects/termostato/src/buzzer.h
+  on_boot:
+    lambda: |-
+      delay(500);
+      buzzer_setup(BUZZER_PIN);
+      buzzer_addTone(NOTE_C5,20,false);
+      buzzer_addTone(NOTE_D5,20,false);
+      buzzer_addTone(NOTE_E5,20,false);
+      buzzer_addTone(NOTE_F5,20,false);
+      buzzer_addTone(NOTE_G5,20,false);
+      buzzer_addTone(NOTE_A5,20,false);
+      buzzer_addTone(NOTE_B5,20,false);
+      buzzer_addTone(NOTE_C6,20,false);
+      buzzer_addTone(NOTE_D6,20,false);
+      buzzer_addTone(NOTE_E6,20,false);
+      buzzer_addTone(NOTE_F6,20,false);
+      buzzer_addTone(NOTE_G6,100,false);
+      buzzer_playTones();
+      id(rtc_time).read_time();
+      logic_init();
+
+# Define SPI bus
+spi:
+  - id: main_spi
+    clk_pin: 18
+    mosi_pin: 23
+    miso_pin: 19
+
+i2c:
+  sda: 33
+  scl: 25
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+    timezone: ${timezone}
+    on_time_sync:
+      then:
+        # ... and update the RTC when the synchronization was successful
+        ds1307.write_time:
+  - platform: ds1307
+    id: rtc_time
+    timezone: ${timezone}
+    update_interval: never
+    on_time:
+      - seconds: '*'
+        then:
+          - lambda: cron_second();
+
+# Define a PWM output on the ESP32
+output:
+  - platform: ledc
+    pin: 15
+    id: backlight_pwm
+    inverted: true
+    frequency: 50kHz
+
+switch:
+  - platform: gpio
+    pin: 26
+    id: heater_relay
+    inverted: false
+    name: "Heater"
+
+globals:
+  - id: touching
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+number:
+  - platform: template
+    id: manual_temp_target
+    name: "Manual Temperature Target"
+    optimistic: true
+    min_value: 14
+    max_value: 26
+    step: 1
+    restore_value: true
+    initial_value: "20"
+  - platform: template
+    id: winter_temp_target
+    name: "Winter Temperature Target"
+    optimistic: true
+    min_value: 14
+    max_value: 26
+    step: 1
+    restore_value: true
+    initial_value: "20"
+  - platform: template
+    id: temp_offset
+    name: "Temperature Offset"
+    optimistic: true
+    min_value: -5
+    max_value: 5
+    step: 0.5
+    restore_value: true
+    initial_value: "2"
+
+sensor:
+  - platform: dht
+    model: DHT22
+    pin: 32
+    temperature:
+      id: "sensor_temp"
+      name: "Thermostat Temperature"
+      filters:
+        - offset: 0
+      on_value:
+        then:
+          - lambda: heater_logic();
+    humidity:
+      id: "sensor_humid"
+      name: "Thermostat Humidity"
+    update_interval: 10s
+
+select:
+  - platform: template
+    name: "Thermostat Mode"
+    id: therm_mode
+    optimistic: true
+    options:
+      - "Manual"
+      - "Winter"
+      - "Summer"
+    initial_option: Summer
+    restore_value: true
+    on_value:
+      lambda: changeOperatingMode(x);
+
+script:
+  - id: sound_click
+    then:
+      lambda: |-
+        buzzer_addTone(NOTE_C7, 10, false);
+        buzzer_addTone(NOTE_F7, 20, false);
+        buzzer_playTones();
+  - id: sound_modechange
+    then:
+      lambda: |-
+        buzzer_addTone(NOTE_C7, 10, false);
+        buzzer_addTone(NOTE_D7, 10, false);
+        buzzer_addTone(NOTE_E7, 10, false);
+        buzzer_addTone(NOTE_F7, 10, false);
+        buzzer_addTone(NOTE_G7, 10, false);
+        buzzer_playTones();
+  - id: sound_wrong
+    then:
+      lambda: |-
+        buzzer_addTone(NOTE_C5, 20, false);
+        buzzer_addTone(NOTE_C4, 60, false);
+        buzzer_playTones();
+
+
+# Define a monochromatic, dimmable light for the backlight
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: "Thermostat Backlight"
+    id: back_light
+    restore_mode: ALWAYS_ON
+
+font:
+  - file: projects/termostato/fonts/DejaVuSansMono.ttf
+    id: smallFont
+    size: 16
+    glyphs: ["+","-",".",":","°","0","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"," ","a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z"]
+  - file: projects/termostato/fonts/DejaVuSansMono-Bold.ttf
+    id: tempFont
+    size: 40
+    glyphs: ["+","-",".","°","0","1","2","3","4","5","6","7","8","9","C"," ","n","a"]
+  - file: projects/termostato/fonts/DejaVuSansMono.ttf
+    id: mainFont
+    size: 20
+    glyphs: ["+","-",".",":","°","0","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"," ","a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z"]
+
+image:
+  - file: "projects/termostato/images/heater_off.png"
+    id: image_heater_off
+    type: binary
+  - file: "projects/termostato/images/heater_on.png"
+    id: image_heater_on
+    type: binary
+  - file: "projects/termostato/images/temp.png"
+    id: image_temp
+    type: binary
+  - file: "projects/termostato/images/wifi.png"
+    id: image_wifi
+    type: binary
+  - file: "projects/termostato/images/clock.png"
+    id: image_clock
+    type: binary
+  - file: "projects/termostato/images/alert.png"
+    id: image_alert
+    type: binary
+  - file: "projects/termostato/images/storage.png"
+    id: image_storage
+    type: binary
+
+color:
+  - id: COL_BLACK
+    red: 0%
+    green: 0%
+    blue: 0%
+  - id: COL_WHITE
+    red: 100%
+    green: 100%
+    blue: 100%
+  - id: COL_GREY
+    red: 60%
+    green: 60%
+    blue: 60%
+  - id: COL_ORANGE
+    red: 100%
+    green: 50%
+    blue: 10%
+  - id: COL_RED
+    red: 100%
+    green: 20%
+    blue: 20%
+  - id: COL_CYAN
+    red: 0%
+    green: 50%
+    blue: 100%
+  - id: COL_BLUE
+    red: 0%
+    green: 10%
+    blue: 100%
+  - id: COL_GREEN
+    red: 0%
+    green: 100%
+    blue: 0%
+  - id: COL_DARKBLUE
+    red: 0%
+    green: 5%
+    blue: 80%
+  - id: COL_DARKRED
+    red: 80%
+    green: 5%
+    blue: 0%
+  - id: COL_LIGHTBLUE
+    red: 40%
+    green: 50%
+    blue: 100%
+  - id: COL_LIGHTRED
+    red: 100%
+    green: 50%
+    blue: 40%
+
+touchscreen:
+  id: tchscr
+  platform: xpt2046
+  cs_pin: 14
+  interrupt_pin: 27
+  update_interval: 50ms
+  report_interval: 50ms
+  threshold: 10
+  # dimension_x: 320
+  # dimension_y: 240
+  calibration_x_max: 265
+  calibration_x_min: 3913
+  calibration_y_max: 411
+  calibration_y_min: 3903
+  swap_x_y: true
+  on_touch:
+    - lambda: |-
+        if(id(tchscr).touched) {
+          touch_detect(id(tchscr).x, id(tchscr).y);
+        }
+
+display:
+  platform: ili9341
+  model: TFT 2.4
+  id: main_display
+  cs_pin: 5
+  dc_pin: 4
+  led_pin: 15
+  reset_pin: 22
+  rotation: 90
+  update_interval: 100ms
+  pages:
+    - id: page_initialization
+      lambda: display_page_initialization();
+    - id: page_summer_idle
+      lambda: display_page_summer_idle();
+    - id: page_summer_menu
+      lambda: display_page_summer_menu();
+    - id: page_manual_idle
+      lambda: display_page_manual_idle();
+    - id: page_manual_menu
+      lambda: display_page_manual_menu();
+    - id: page_winter_idle
+      lambda: display_page_winter_idle();
+    - id: page_winter_menu
+      lambda: display_page_winter_menu();
+    - id: page_winter_schedule
+      lambda: display_page_winter_schedule();
+    - id: page_winter_edit
+      lambda: display_page_winter_edit();
