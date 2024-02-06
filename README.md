@@ -1,5 +1,7 @@
 # esphome-thermostat
 
+![Thermostat concept](resources/termostato.png)
+
 Smart thermostats aren't really smart nowadays, most of them rely heavily on automation systems to manage cutoff temps and heating schedule, making the devices themselves very simple digital thermostats.
 I wanted to replace my old programmable thermostat with a smart one, but I wanted some things from it that I didn't find in any of the commercially available ones:
 
@@ -13,6 +15,8 @@ I wanted to replace my old programmable thermostat with a smart one, but I wante
 
 This repo is my take on a truly "smart" thermostat, completely (almost) independent from the network, fully programmable with a weekly schedule via touchscreen interface, there is no limit on the quantity of temperature configuration points during any day, but the small 320x240 screen has only space for a handful per day, and there is no scrolling, so...
 The configuration points can be set for any hour, any minute and any temperature, and the thermostat will engage or disengage the heater relay according to the current configuration.
+
+![Thermostat screens](resources/screens.png)
 
 ## Roadmap
 
